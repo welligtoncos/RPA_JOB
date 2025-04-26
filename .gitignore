@@ -1,0 +1,57 @@
+# Python bytecode e cache
+.pytest_cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.cpython-312.pyc
+
+# Django
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+media/
+
+# Ambiente virtual
+.env
+.venv
+env/
+venv/
+ENV/
+
+# Arquivos específicos do editor
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Configurações específicas do projeto
+*.env
+settings_local.py
+
+# Arquivos de migrações (opcional, descomente se necessário)
+# */migrations/*.py
+# !*/migrations/__init__.py
+
+# Arquivos estáticos e de mídia
+/static/
+/media/
+/staticfiles/
+
+# Arquivos de backup
+*.bak
+*.tmp
+
+# Office e PDFs
+*.docx
+*.xlsx
+*.pptx
+*.pdf
+
+# Logs e dados temporários
+logs/
+tmp/
+temp/

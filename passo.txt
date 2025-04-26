@@ -1,0 +1,55 @@
+
+Configuração do Ambiente e Criação do Projeto Django
+# Criar um ambiente virtual
+python -m venv env
+
+# Ativar o ambiente virtual
+# No Windows:
+env\Scripts\activate
+# No macOS/Linux:
+source env/bin/activate
+
+python.exe -m pip install --upgrade pip
+
+# Instalar os pacotes necessários
+pip install django djangorestframework
+
+# Criar um novo projeto Django
+django-admin startproject projeto_selecao_aleatoria
+
+# Entrar na pasta do projeto
+cd projeto_selecao_aleatoria
+
+# Criar uma aplicação
+python manage.py startapp core
+
+Configuração do Django REST Framework
+Vamos configurar o Django REST Framework no arquivo settings.py:
+
+# projeto_selecao_aleatoria/settings.py
+
+INSTALLED_APPS = [
+    'django.contrib.admin',
+    'django.contrib.auth',
+    'django.contrib.contenttypes',
+    'django.contrib.sessions',
+    'django.contrib.messages',
+    'django.contrib.staticfiles',
+    'rest_framework',  # Adicionar o REST Framework
+    'core',  # Adicionar o app que criamos
+]
+
+# Configurações do REST Framework
+REST_FRAMEWORK = {
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.AllowAny',
+    ]
+}
+
+# Gerar arquivos de migração
+python manage.py makemigrations
+
+# Aplicar migrações ao banco de dados
+python manage.py migrate
+
+python manage.py createsuperuser
