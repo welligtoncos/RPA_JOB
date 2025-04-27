@@ -79,3 +79,67 @@ class RPAHistoricoSerializer(serializers.ModelSerializer):
             representation['tipo'] = 'sistema'
         
         return representation
+    
+
+# Adicione ao arquivo serializers.py 
+class RPADockerSerializer(serializers.ModelSerializer):
+    imagem_docker = serializers.CharField(max_length=255)
+    comando = serializers.CharField(max_length=1000, required=False, default="")
+    
+    class Meta:
+        model = ProcessamentoRPA
+        fields = ['imagem_docker', 'comando']
+        
+    def create(self, validated_data):
+        # Extrair campos específicos
+        imagem_docker = validated_data.pop('imagem_docker')
+        comando = validated_data.pop('comando', "")
+        
+        # Criar parâmetros
+        parametros = {
+            'imagem_docker': imagem_docker,
+            'comando': comando
+        }
+        
+        return ProcessamentoRPA.objects.create(
+            tipo='docker_rpa',
+            parametros=parametros,
+            **validated_data
+        )
+
+class RPADockerHistoricoSerializer(serializers.ModelSerializer):
+    container_id = serializers.SerializerMethodField()
+    imagem = serializers.SerializerMethodField()
+    tempo_execucao = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = ProcessamentoRPA
+        fields = [
+            'id', 
+            'tipo', 
+            'status', 
+            'progresso', 
+            'criado_em', 
+            'concluido_em',
+            'container_id',
+            'imagem',
+            'tempo_execucao',
+            'resultado',
+            'mensagem_erro'
+        ]
+        read_only_fields = fields
+    
+    def get_container_id(self, obj):
+        if obj.resultado and isinstance(obj.resultado, dict) and 'container_info' in obj.resultado:
+            return obj.resultado['container_info'].get('container_id', 'N/A')
+        return 'N/A'
+    
+    def get_imagem(self, obj):
+        if obj.resultado and isinstance(obj.resultado, dict) and 'container_info' in obj.resultado:
+            return obj.resultado['container_info'].get('imagem', 'N/A')
+        return 'N/A'
+    
+    def get_tempo_execucao(self, obj):
+        if obj.resultado and isinstance(obj.resultado, dict) and 'container_info' in obj.resultado:
+            return obj.resultado['container_info'].get('duracao_segundos', 0)
+        return 0

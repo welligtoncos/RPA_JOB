@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from core.views import HistoricoRPAViewSet, RPAViewSet
+from core.views import DockerHistoricoViewSet, HistoricoRPAViewSet, RPAViewSet
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 # 🔥 Importa o drf_yasg
@@ -23,11 +23,12 @@ schema_view = get_schema_view(
 router = DefaultRouter()
 router.register(r'rpa', RPAViewSet, basename='rpa')
 router.register(r'historico-rpa', HistoricoRPAViewSet, basename='historico-rpa')
+router.register(r'docker-historico', DockerHistoricoViewSet, basename='docker-historico')
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('api/', include(router.urls)),
-    
+    path('api/', include(router.urls)),  # Aqui já inclui as rotas registradas no router
+
     # ✅ JWT Authentication
     path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
@@ -35,4 +36,4 @@ urlpatterns = [
     # ✅ Swagger
     path('swagger/', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),
     path('redoc/', schema_view.with_ui('redoc', cache_timeout=0), name='schema-redoc'),
-]
+]   
