@@ -1,15 +1,16 @@
+# views.py
 import threading
 import time
 import logging
 from datetime import datetime
 from django.utils import timezone
-from rest_framework import viewsets, status
+from rest_framework import viewsets, status, serializers  # Adicione serializers aqui
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from .models import ProcessamentoRPA, ProcessamentoRPATemplate
-from .serializers import RPASerializer, RPACreateSerializer
+from .serializers import RPASerializer, RPACreateSerializer, RPAHistoricoSerializer
 
 logger = logging.getLogger(__name__)
 
@@ -130,3 +131,33 @@ class RPAViewSet(viewsets.ModelViewSet):
                 {'erro': f'Não é possível reiniciar um processamento com status {processamento.status}'},
                 status=status.HTTP_400_BAD_REQUEST
             )
+
+ 
+class HistoricoRPAViewSet(viewsets.ReadOnlyModelViewSet):
+    """ViewSet para listar histórico de processamentos do usuário"""
+    permission_classes = [IsAuthenticated]
+    serializer_class = RPAHistoricoSerializer
+
+    def get_queryset(self):
+        """Retorna todos os processamentos do usuário, incluindo concluídos e com falha"""
+        return ProcessamentoRPA.objects.filter(
+            user=self.request.user
+        ).order_by('-criado_em')
+
+# serializers.py
+class RPAHistoricoSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ProcessamentoRPA
+        fields = [
+            'id', 
+            'tipo', 
+            'status', 
+            'progresso', 
+            'criado_em', 
+            'concluido_em', 
+            'resultado',
+            'mensagem_erro'
+        ]
+        read_only_fields = fields
+
+# urls.py
