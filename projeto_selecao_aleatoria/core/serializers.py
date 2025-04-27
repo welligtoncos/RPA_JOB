@@ -83,7 +83,7 @@ class RPAHistoricoSerializer(serializers.ModelSerializer):
 
 # Adicione ao arquivo serializers.py 
 class RPADockerSerializer(serializers.ModelSerializer):
-    parametros = serializers.JSONField()
+    parametros = serializers.JSONField(write_only=True)
     
     class Meta:
         model = ProcessamentoRPA
@@ -94,6 +94,13 @@ class RPADockerSerializer(serializers.ModelSerializer):
         if 'parametros' not in data:
             data['parametros'] = {}
         return data
+        
+    def create(self, validated_data):
+        # Extract parametros before creating the model instance
+        parametros = validated_data.pop('parametros', {})
+        # Store parametros in dados_entrada field
+        validated_data['dados_entrada'] = parametros
+        return super().create(validated_data)
 
 class RPADockerHistoricoSerializer(serializers.ModelSerializer):
     container_id = serializers.SerializerMethodField()

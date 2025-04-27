@@ -71,6 +71,7 @@ class ProcessamentoRPA(models.Model):
         ('email', 'Automação de Email'),
         ('web', 'Automação Web'),
         ('sistema', 'Interação com Sistema'),
+        ('docker_rpa', 'Processamento Docker RPA'),
     )
     
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False) 

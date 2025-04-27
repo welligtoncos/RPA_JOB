@@ -214,10 +214,10 @@ class RPADockerProcessor:
 
             # Utilizando a imagem "rpa-homologacao:1.0" para o container Docker
             imagem_docker = "rpa-homologacao:1.0"
-            comando = processamento.parametros.get('comando', 'python -c "print(\'Hello from Docker\')"')
+            comando = processamento.dados_entrada.get('comando', 'python -c "print(\'Hello from Docker\')"')
             
             # Gera um nome único para o container baseado no ID do processamento
-            container_name = f"rpa_{processamento.id.replace('-', '')[:12]}"
+            container_name = f"rpa_{str(processamento.id).replace('-', '')[:12]}"
 
             # Registra informações iniciais do container
             container_info = {
