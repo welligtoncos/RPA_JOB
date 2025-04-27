@@ -9,6 +9,8 @@ from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from rest_framework.pagination import PageNumberPagination
+
 from .models import ProcessamentoRPA, ProcessamentoRPATemplate
 from .serializers import RPASerializer, RPACreateSerializer, RPAHistoricoSerializer
 
@@ -133,10 +135,16 @@ class RPAViewSet(viewsets.ModelViewSet):
             )
 
  
+class HistoricoPagination(PageNumberPagination):
+    page_size = 10  # Número de itens por página
+    page_size_query_param = 'page_size'
+    max_page_size = 100
+
 class HistoricoRPAViewSet(viewsets.ReadOnlyModelViewSet):
     """ViewSet para listar histórico de processamentos do usuário"""
     permission_classes = [IsAuthenticated]
     serializer_class = RPAHistoricoSerializer
+    pagination_class = HistoricoPagination
 
     def get_queryset(self):
         """Retorna todos os processamentos do usuário, incluindo concluídos e com falha"""
