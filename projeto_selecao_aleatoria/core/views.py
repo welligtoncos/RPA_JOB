@@ -5,10 +5,10 @@ from datetime import datetime
 from django.utils import timezone
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
-from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
 
-from .models import ProcessamentoRPA
+from .models import ProcessamentoRPA, ProcessamentoRPATemplate
 from .serializers import RPASerializer, RPACreateSerializer
 
 logger = logging.getLogger(__name__)
@@ -31,6 +31,7 @@ class RPAProcessor:
     def _processar(processamento):
         """Executa o processamento simulado."""
         try:
+            logger = logging.getLogger(__name__)
             logger.info(f"Iniciando processamento RPA {processamento.id}")
             processamento.iniciar_processamento()
 
@@ -56,6 +57,7 @@ class RPAProcessor:
             logger.info(f"Processamento RPA {processamento.id} concluído.")
 
         except Exception as e:
+            logger = logging.getLogger(__name__)
             logger.error(f"Erro no processamento RPA {processamento.id}: {str(e)}")
             processamento.falhar(str(e))
 
@@ -64,9 +66,19 @@ class RPAViewSet(viewsets.ModelViewSet):
     """ViewSet para gerenciar processamentos RPA."""
     permission_classes = [IsAuthenticated]
 
+    def list(self, request, *args, **kwargs):
+        # Log para verificar processos retornados
+        queryset = self.get_queryset()
+        serializer = self.get_serializer(queryset, many=True)
+        logger.info(f"Processos retornados: {serializer.data}")
+        return Response(serializer.data)
+
     def get_queryset(self):
-        """Retorna apenas os processamentos do usuário autenticado."""
-        return ProcessamentoRPA.objects.filter(user=self.request.user)
+        # Retorna processos do usuário atual
+        return ProcessamentoRPA.objects.filter(
+            user=self.request.user, 
+            status__in=['pendente', 'processando']
+        ).order_by('-criado_em')
 
     def get_serializer_class(self):
         if self.action == 'create':
@@ -82,11 +94,15 @@ class RPAViewSet(viewsets.ModelViewSet):
         """Cria um novo processamento RPA."""
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        self.perform_create(serializer)  # usar perform_create para associar o usuário
+        self.perform_create(serializer)
 
         headers = self.get_success_headers(serializer.data)
         return Response(
-            {'id': serializer.instance.id, 'mensagem': 'Processamento RPA iniciado'},
+            {
+                'id': serializer.instance.id, 
+                'mensagem': 'Processamento RPA iniciado',
+                'tipo': serializer.instance.tipo
+            },
             status=status.HTTP_201_CREATED,
             headers=headers
         )
