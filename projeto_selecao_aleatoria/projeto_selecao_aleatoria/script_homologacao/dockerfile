@@ -1,0 +1,10 @@
+# Dockerfile
+FROM python:3.9-slim
+
+WORKDIR /app
+
+# Copia o script para o container
+COPY rpa_script.py .
+
+# Define o script como ponto de entrada
+ENTRYPOINT ["python", "rpa_script.py"]

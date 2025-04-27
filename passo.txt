@@ -59,3 +59,10 @@ pip install setuptools
  python manage.py runserver 
 
  pip install -r requirements.txt
+
+
+# Construir a imagem
+docker build -t rpa-test:1.0 .
+
+# Testar a imagem (executa com 8 passos)
+docker run --rm rpa-test:1.0 8
