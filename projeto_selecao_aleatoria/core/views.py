@@ -177,12 +177,19 @@ class RPAHistoricoSerializer(serializers.ModelSerializer):
 import shlex
 import subprocess
 
+import shlex
+import subprocess
+import logging
+from datetime import datetime
+
+logger = logging.getLogger(__name__)
+
 class RPADockerProcessor:
-    """Classe para executar processamento RPA via Docker com atualizações."""
+    """Classe para executar processamento RPA via Docker com atualizações em tempo real."""
 
     @staticmethod
     def processar_async(processamento):
-        """Inicia o processamento em segundo plano usando threading."""
+        """Inicia o processamento em segundo plano usando threading para cada usuário."""
         thread = threading.Thread(
             target=RPADockerProcessor._processar,
             args=(processamento,),
@@ -193,102 +200,62 @@ class RPADockerProcessor:
 
     @staticmethod
     def _processar(processamento):
-        """Executa o container Docker e monitora seu progresso."""
+        """Executa o container Docker e monitora seu progresso em tempo real para cada usuário."""
         try:
-            logger.info(f"Iniciando processamento Docker RPA {processamento.id}")
+            logger.info(f"Iniciando processamento Docker RPA para o usuário {processamento.user.id} com ID {processamento.id}")
             processamento.iniciar_processamento()
 
-            # Obtém os parâmetros do processamento
-            imagem_docker = processamento.parametros.get('imagem_docker')
-            comando = processamento.parametros.get('comando', '')
-            
+            # Utilizando a imagem "rpa-homologacao:1.0" para o container Docker
+            imagem_docker = "rpa-homologacao:1.0"  # A imagem para ser usada
+            comando = processamento.parametros.get('comando', 'python -c "print(\'Hello from Docker\')"')
+
             # Registra informações do container no processamento
             container_info = {
                 'container_iniciado': datetime.now().isoformat(),
                 'imagem': imagem_docker,
                 'comando': comando
             }
-            
-            # Adiciona ou atualiza informações do container 
-            if not processamento.resultado:
-                processamento.resultado = {}
-            
-            processamento.resultado['container_info'] = container_info
+            processamento.resultado = {'container_info': container_info}
             processamento.save(update_fields=['resultado'])
-            
-            # Prepara o comando do Docker
+
+            # Prepara o comando Docker para rodar o container
             docker_comando = f"docker run --rm {imagem_docker} {comando}"
             logger.info(f"Executando comando Docker: {docker_comando}")
-            
+
             # Executa o container Docker
-            inicio_execucao = datetime.now()
             processo = subprocess.Popen(
                 shlex.split(docker_comando),
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True
             )
-            
-            # Captura o ID do container (se possível)
-            try:
-                # Opcional: Capturar ID do container para rastreamento mais detalhado
-                container_id_cmd = subprocess.run(
-                    ["docker", "ps", "--latest", "--format", "{{.ID}}"],
-                    capture_output=True, text=True
-                )
-                container_id = container_id_cmd.stdout.strip()
-                if container_id:
-                    container_info['container_id'] = container_id
-                    processamento.resultado['container_info'] = container_info
-                    processamento.save(update_fields=['resultado'])
-            except Exception as e:
-                logger.warning(f"Não foi possível obter ID do container: {e}")
-            
-            # Registro da saída do container
-            saida_linhas = []
-            
-            # Monitora a saída em tempo real
-            while True:
-                linha = processo.stdout.readline()
-                if linha == '' and processo.poll() is not None:
-                    break
-                    
-                if linha:
-                    linha = linha.strip()
-                    logger.info(f"Docker output: {linha}")
-                    saida_linhas.append(linha)
-                    
-                    # Captura atualizações de progresso
-                    if "progresso:" in linha.lower():
-                        try:
-                            progresso = int(linha.split(':')[1].strip().replace('%', ''))
-                            processamento.atualizar_progresso(min(progresso, 99))
-                            logger.info(f"Progresso atualizado: {progresso}%")
-                        except (ValueError, IndexError) as e:
-                            logger.error(f"Erro ao extrair progresso: {e}")
-            
-            # Captura erros
+
+            # Lê e registra a saída do container em tempo real
+            for linha in processo.stdout:
+                logger.info(f"Docker output: {linha.strip()}")
+                if "progresso" in linha.lower():  # Caso o progresso seja informado no log
+                    try:
+                        progresso = int(linha.split(':')[1].strip().replace('%', ''))
+                        processamento.atualizar_progresso(min(progresso, 100))
+                    except (ValueError, IndexError) as e:
+                        logger.error(f"Erro ao processar progresso: {e}")
+
+            processo.stdout.close()
+            processo.wait()  # Espera o término do processo Docker
+
+            # Captura erro, se houver
             erro = processo.stderr.read()
-            
-            # Calcula tempo de execução
-            fim_execucao = datetime.now()
-            duracao = (fim_execucao - inicio_execucao).total_seconds()
-            
-            # Atualiza informações do container
-            container_info['container_finalizado'] = fim_execucao.isoformat()
-            container_info['duracao_segundos'] = duracao
-            
-            # Verifica o código de retorno
-            codigo_retorno = processo.wait()
-            container_info['codigo_retorno'] = codigo_retorno
-            
-            if codigo_retorno == 0:
-                # Processamento concluído com sucesso
-                container_info['status'] = 'concluido'
-                
-                # Armazena as últimas linhas da saída (limitado a 20 linhas para não sobrecarregar)
-                container_info['saida'] = saida_linhas[-20:] if saida_linhas else []
-                
+
+            if erro:
+                logger.error(f"Erro no Docker: {erro}")
+
+            # Registra o término do container
+            container_info['container_finalizado'] = datetime.now().isoformat()
+            processamento.resultado['container_info'] = container_info
+            processamento.save(update_fields=['resultado'])
+
+            # Define o status de sucesso ou falha
+            if processo.returncode == 0:
                 resultado = {
                     'tipo': processamento.tipo,
                     'mensagem': 'Processamento Docker concluído com sucesso',
@@ -296,26 +263,20 @@ class RPADockerProcessor:
                     'container_info': container_info
                 }
                 processamento.concluir(resultado)
-                logger.info(f"Processamento Docker RPA {processamento.id} concluído com sucesso.")
+                logger.info(f"Processamento Docker RPA para o usuário {processamento.user.id} com ID {processamento.id} concluído com sucesso.")
             else:
-                # Processamento falhou
-                container_info['status'] = 'falha'
-                container_info['saida'] = saida_linhas[-20:] if saida_linhas else []
-                container_info['erro'] = erro
-                
                 resultado = {
                     'tipo': processamento.tipo,
                     'mensagem': 'Processamento Docker falhou',
                     'timestamp': datetime.now().isoformat(),
                     'container_info': container_info
                 }
-                
-                processamento.falhar(f"Container Docker retornou código de erro: {codigo_retorno}")
+                processamento.falhar(erro)
                 processamento.resultado = resultado
                 processamento.save(update_fields=['resultado'])
-                
+
         except Exception as e:
-            logger.error(f"Erro no processamento Docker RPA {processamento.id}: {str(e)}")
+            logger.error(f"Erro no processamento Docker RPA para o usuário {processamento.user.id} com ID {processamento.id}: {str(e)}")
             processamento.falhar(str(e))
 
 
