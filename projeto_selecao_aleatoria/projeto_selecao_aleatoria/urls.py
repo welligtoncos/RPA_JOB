@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from core.views import DockerHistoricoViewSet, HistoricoRPAViewSet, RPAViewSet
+from core.views import DockerHistoricoViewSet, HistoricoRPAViewSet, RPADockerViewSet, RPAViewSet
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 # 🔥 Importa o drf_yasg
@@ -24,6 +24,7 @@ router = DefaultRouter()
 router.register(r'rpa', RPAViewSet, basename='rpa')
 router.register(r'historico-rpa', HistoricoRPAViewSet, basename='historico-rpa')
 router.register(r'docker-historico', DockerHistoricoViewSet, basename='docker-historico')
+router.register(r'docker-rpa', RPADockerViewSet, basename='docker-rpa')
 
 urlpatterns = [
     path('admin/', admin.site.urls),

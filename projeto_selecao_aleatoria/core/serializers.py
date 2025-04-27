@@ -83,29 +83,17 @@ class RPAHistoricoSerializer(serializers.ModelSerializer):
 
 # Adicione ao arquivo serializers.py 
 class RPADockerSerializer(serializers.ModelSerializer):
-    imagem_docker = serializers.CharField(max_length=255)
-    comando = serializers.CharField(max_length=1000, required=False, default="")
+    parametros = serializers.JSONField()
     
     class Meta:
         model = ProcessamentoRPA
-        fields = ['imagem_docker', 'comando']
+        fields = ['tipo', 'parametros']
         
-    def create(self, validated_data):
-        # Extrair campos específicos
-        imagem_docker = validated_data.pop('imagem_docker')
-        comando = validated_data.pop('comando', "")
-        
-        # Criar parâmetros
-        parametros = {
-            'imagem_docker': imagem_docker,
-            'comando': comando
-        }
-        
-        return ProcessamentoRPA.objects.create(
-            tipo='docker_rpa',
-            parametros=parametros,
-            **validated_data
-        )
+    def validate(self, data):
+        data['tipo'] = 'docker_rpa'  # Força o tipo como docker_rpa
+        if 'parametros' not in data:
+            data['parametros'] = {}
+        return data
 
 class RPADockerHistoricoSerializer(serializers.ModelSerializer):
     container_id = serializers.SerializerMethodField()

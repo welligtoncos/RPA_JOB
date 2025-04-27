@@ -146,7 +146,11 @@ LOGGING = {
     'disable_existing_loggers': False,
     'formatters': {
         'verbose': {
-            'format': '{levelname} {asctime} {module} {message}',
+            'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
+            'style': '{',
+        },
+        'docker': {
+            'format': '[DOCKER] {levelname} {asctime} {message}',
             'style': '{',
         },
     },
@@ -158,10 +162,20 @@ LOGGING = {
         },
         'file': {
             'level': 'INFO',
-            'class': 'logging.FileHandler',
+            'class': 'logging.handlers.RotatingFileHandler',
             'filename': os.path.join(BASE_DIR, 'logs/projeto.log'),
             'formatter': 'verbose',
+            'maxBytes': 10485760,  # 10MB
+            'backupCount': 10,
         },
+        'docker_file': {
+            'level': 'INFO',
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': os.path.join(BASE_DIR, 'logs/docker_rpa.log'),
+            'formatter': 'docker',
+            'maxBytes': 10485760,  # 10MB
+            'backupCount': 10,
+        }
     },
     'root': {
         'handlers': ['console', 'file'],
@@ -175,6 +189,11 @@ LOGGING = {
         },
         'core': {
             'handlers': ['console', 'file'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'docker_rpa': {
+            'handlers': ['console', 'docker_file'],
             'level': 'INFO',
             'propagate': False,
         },

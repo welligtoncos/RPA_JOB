@@ -66,3 +66,15 @@ docker build -t rpa-test:1.0 .
 
 # Testar a imagem (executa com 8 passos)
 docker run --rm rpa-test:1.0 8
+
+docker build -t rpa-massa:1.0 .
+docker run --rm rpa-massa:1.0 8
+
+docker build -t rpa-homologacao:1.0 .
+
+python teste_processamento_massa.py
+
+
+Construa a imagem Docker com docker build -t meu-rpa:1.0 .
+Configure a URL no urls.py para apontar para o novo ViewSet
+Use a API para iniciar um processamento, enviando a imagem Docker e comando necessários
