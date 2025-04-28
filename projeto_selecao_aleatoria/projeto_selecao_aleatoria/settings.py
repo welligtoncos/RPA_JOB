@@ -13,8 +13,11 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 import os
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
-BASE_DIR = Path(__file__).resolve().parent.parent
+BASE_DIR = Path(__file__).resolve().parent.parent 
+load_dotenv(BASE_DIR / '.env')
 
 
 # Quick-start development settings - unsuitable for production
@@ -26,6 +29,20 @@ SECRET_KEY = 'django-insecure-nmfd6vg_x@z4n9ckfu@a1@%ih-cuf=dg0=8&d@yocx3%hb=d^y
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
+AWS_ACCESS_KEY_ID        = os.getenv("AWS_ACCESS_KEY_ID")
+AWS_SECRET_ACCESS_KEY    = os.getenv("AWS_SECRET_ACCESS_KEY")
+AWS_STORAGE_BUCKET_NAME  = os.getenv("AWS_STORAGE_BUCKET_NAME")
+AWS_S3_REGION_NAME       = os.getenv("AWS_S3_REGION_NAME", "us-east-2")
+
+if not AWS_STORAGE_BUCKET_NAME:
+    # Fallback para storage local quando não houver bucket configurado
+    import logging
+    logging.warning("⚠️ AWS_STORAGE_BUCKET_NAME não definido: usando FileSystemStorage")
+    DEFAULT_FILE_STORAGE = 'django.core.files.storage.FileSystemStorage'
+else:
+    # Configura S3 como backend
+    DEFAULT_FILE_STORAGE = 'storages.backends.s3boto3.S3Boto3Storage'
+        
 ALLOWED_HOSTS = []
 
 
@@ -38,9 +55,10 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'rest_framework',  # REST Framework
-    'core',  #o app que criamos
+    'rest_framework',  # REST Framework 
     'drf_yasg',#swegger
+    'storages',
+    "core.apps.CoreConfig",
 ]
 
  
@@ -202,3 +220,10 @@ LOGGING = {
 
 # Ensure logs directory exists
 os.makedirs(os.path.join(BASE_DIR, 'logs'), exist_ok=True)
+ 
+# S3 settings
+AWS_DEFAULT_ACL = None
+AWS_S3_OBJECT_PARAMETERS = {'CacheControl': 'max-age=86400'}
+DEFAULT_FILE_STORAGE = 'storages.backends.s3boto3.S3Boto3Storage'
+
+# STATICFILES_STORAGE = 'storages.backends.s3boto3.S3StaticStorage'

@@ -140,3 +140,11 @@ class ProcessamentoRPA(models.Model):
         """Atualiza o progresso"""
         self.progresso = progresso
         self.save(update_fields=['progresso'])
+
+
+class Resultado(models.Model):
+    user_id = models.CharField(max_length=50)
+    arquivo = models.FileField(upload_to='resultados/%Y/%m/%d/')
+
+    def __str__(self):
+        return f"{self.user_id} – {self.arquivo.name}"
