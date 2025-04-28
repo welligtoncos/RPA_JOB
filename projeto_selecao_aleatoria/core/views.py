@@ -1,4 +1,5 @@
 # views.py
+from pathlib import Path
 import threading
 import time
 import logging
@@ -68,9 +69,14 @@ class RPAProcessor:
 class RPAViewSet(viewsets.ModelViewSet):
     """ViewSet para gerenciar processamentos RPA."""
     permission_classes = [IsAuthenticated]
+    pagination_class  = PageNumberPagination
 
     def get_object(self):
-        return ProcessamentoRPA.objects.get(id=self.kwargs['pk'])
+        return ProcessamentoRPA.objects.get(
+            id=self.kwargs['pk'],
+            user=self.request.user
+        )
+
 
     def list(self, request, *args, **kwargs):
         # Log para verificar processos retornados
@@ -80,16 +86,14 @@ class RPAViewSet(viewsets.ModelViewSet):
         return Response(serializer.data)
 
     def get_queryset(self):
-        # Retorna processos do usuário atual
+        """Somente processos ativos do usuário logado."""
         return ProcessamentoRPA.objects.filter(
-            user=self.request.user, 
+            user=self.request.user,
             status__in=['pendente', 'processando']
         ).order_by('-criado_em')
 
     def get_serializer_class(self):
-        if self.action == 'create':
-            return RPACreateSerializer
-        return RPASerializer
+        return RPACreateSerializer if self.action == 'create' else RPASerializer
 
     def perform_create(self, serializer):
         """Salva o processamento associando ao usuário automaticamente."""
@@ -150,202 +154,218 @@ class HistoricoRPAViewSet(viewsets.ReadOnlyModelViewSet):
     pagination_class = HistoricoPagination
 
     def get_queryset(self):
-        """Retorna todos os processamentos do usuário, incluindo concluídos e com falha"""
         return ProcessamentoRPA.objects.filter(
             user=self.request.user
         ).order_by('-criado_em')
 
-# serializers.py
-class RPAHistoricoSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = ProcessamentoRPA
-        fields = [
-            'id', 
-            'tipo', 
-            'status', 
-            'progresso', 
-            'criado_em', 
-            'concluido_em', 
-            'resultado',
-            'mensagem_erro'
-        ]
-        read_only_fields = fields
+ 
+ 
 
-# urls.py
-
-# Adicione ao arquivo views.py
-import shlex
-import subprocess
-
+# Para classes Docker, defina o logger específico 
+import os
 import shlex
 import subprocess
 import logging
 from datetime import datetime
+import threading
 
-# Para classes regulares não relacionadas ao Docker
-logger = logging.getLogger(__name__)
-
-# Para classes Docker, defina o logger específico
 docker_logger = logging.getLogger('docker_rpa')
 
-class RPADockerProcessor:
-    """Classe para executar processamento RPA via Docker com atualizações em tempo real."""
+# rpa/docker_processor.py
+import os, shlex, subprocess, threading, logging
+from pathlib import Path
+from datetime import datetime
 
-  
-    # Adicione este método que está faltando na classe RPADockerProcessor
+docker_logger = logging.getLogger("docker_rpa")
+
+
+class RPADockerProcessor:
+    """
+    Executa o ETL dentro de um container Docker, fazendo stream dos logs e
+    atualizando o modelo ProcessamentoRPA em tempo real.
+    """
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # HELPERS
+    # ──────────────────────────────────────────────────────────────────────────
+    @staticmethod
+    def _make_volume_option(output_dir: Path) -> str:
+        """
+        Gera string -v <host_abs>:<container_dir>:rw compatível com Linux/macOS
+        e Windows (C:\ → /c/).
+        """
+        host_path = output_dir.resolve()           # sempre absoluto
+
+        if os.name == "nt":                        # Windows
+            drive, rest = os.path.splitdrive(host_path)
+            docker_host = f"/{drive.rstrip(':').lower()}{rest.replace('\\', '/')}"
+        else:                                      # Unix-like já serve
+            docker_host = str(host_path)
+
+        return f"-v {docker_host}:/app/output:rw"
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # DISPARA EM THREAD
+    # ──────────────────────────────────────────────────────────────────────────
     @staticmethod
     def processar_async(processamento):
-        """Inicia o processamento em segundo plano usando threading para cada usuário."""
-        thread = threading.Thread(
+        threading.Thread(
             target=RPADockerProcessor._processar,
             args=(processamento,),
-            daemon=True
-        )
-        thread.start()
-        return thread
-    
+            daemon=True,
+        ).start()
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # LÓGICA PRINCIPAL
+    # ──────────────────────────────────────────────────────────────────────────
     @staticmethod
     def _processar(processamento):
-        """Executa o container Docker e monitora seu progresso em tempo real para cada usuário."""
         try:
-             # Use o logger específico para Docker desde o início
-            docker_logger.info(f"Iniciando processamento Docker RPA para o usuário {processamento.user.id} com ID {processamento.id}")
+            docker_logger.info(
+                "Iniciando Docker ETL (proc=%s, user=%s)",
+                processamento.id,
+                processamento.user_id,
+            )
             processamento.iniciar_processamento()
 
-            # Utilizando a imagem "rpa-homologacao:1.0" para o container Docker
-            imagem_docker = "rpa-homologacao:1.0"
-            comando = processamento.dados_entrada.get('comando', 'python -c "print(\'Hello from Docker\')"')
-            
-            # Gera um nome único para o container baseado no ID do processamento
-            container_name = f"rpa_{str(processamento.id).replace('-', '')[:12]}"
+            # 1) Dados base
+            imagem_docker = "sharepoint-etl"          # sem tag ⇒ latest
+            comando       = processamento.dados_entrada.get(
+                "comando", "python /app/sharepoint_etl.py"
+            )
+            container_name = f"etl_{str(processamento.id).replace('-', '')[:12]}"
 
-            # Registra informações iniciais do container
             container_info = {
-                'container_iniciado': datetime.now().isoformat(),
-                'imagem': imagem_docker,
-                'comando': comando,
-                'container_name': container_name
+                "container_iniciado": datetime.now().isoformat(),
+                "imagem": imagem_docker,
+                "comando": comando,
+                "container_name": container_name,
             }
-            processamento.resultado = {'container_info': container_info}
-            processamento.save(update_fields=['resultado'])
-            
-             # Prepara o comando Docker com nome específico (sem --rm para poder obter logs)
-            docker_comando = f"docker run -d --name {container_name} {imagem_docker} {comando}"
-            # Use docker_logger em vez de logger
-            docker_logger.info(f"Executando comando Docker: {docker_comando}")
-            
-            # Executa o container Docker
-            processo = subprocess.Popen(
-                shlex.split(docker_comando),
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True
+            processamento.resultado = {"container_info": container_info}
+            processamento.save(update_fields=["resultado"])
+
+            # 2) Saída (host)
+            output_dir = Path("docker_output") / container_name
+            output_dir.mkdir(parents=True, exist_ok=True)
+            volume_option = RPADockerProcessor._make_volume_option(output_dir)
+
+            # 3) Variáveis de ambiente opcionais
+            env_vars   = processamento.dados_entrada.get("env_vars", {})
+            env_option = " ".join(f"-e {k}='{v}'" for k, v in env_vars.items())
+
+            # 4) Comando docker: -it + --rm + nome fixo
+            docker_cmd = (
+                f"docker run -it --rm --name {container_name} "
+                f"{volume_option} {env_option} {imagem_docker} {comando}"
             )
-            
-            # Captura o ID do container
-            container_id = processo.stdout.read().strip()
-            container_info['container_id'] = container_id
-            processamento.resultado['container_info'] = container_info
-            processamento.save(update_fields=['resultado'])
-            docker_logger.info(f"Container iniciado com ID: {container_id}")
-            
-            # Monitora logs em tempo real
-            logs_cmd = f"docker logs -f {container_name}"
-            logs_processo = subprocess.Popen(
-                shlex.split(logs_cmd),
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True
-            )
-            
-            # Lê e registra a saída do container em tempo real
-            for linha in logs_processo.stdout:
-                linha_limpa = linha.strip()
-                docker_logger.info(f"Docker output ({container_name}): {linha_limpa}")
-                if "progresso" in linha_limpa.lower():  # Caso o progresso seja informado no log
+            docker_logger.info("Docker cmd: %s", docker_cmd)
+
+            # 5) Executa container (Popen para ler logs)
+            run_proc = subprocess.Popen(
+            shlex.split(docker_cmd),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding='utf-8',       # força UTF-8
+            errors='replace',       # substitui bytes inválidos por �
+            bufsize=1,
+        )
+            # container_id é a primeira linha de saída em modo -it? Não; vamos
+            # apenas usar o nome do container para 'wait' e 'logs'.
+
+            # 6) Stream dos logs
+            for linha in run_proc.stdout:
+                linha = linha.rstrip()
+                docker_logger.info("[%s] %s", container_name, linha)
+
+                # Atualiza progresso por palavras-chave
+                if any(p in linha for p in ("Baixando arquivo", "Extraindo dados")):
+                    processamento.atualizar_progresso(25)
+                elif any(p in linha for p in ("Transformação", "Coluna para acessar")):
+                    processamento.atualizar_progresso(50)
+                elif "Seleção de itens concluída" in linha:
+                    processamento.atualizar_progresso(60)
+                elif "Resultado salvo como" in linha:
+                    processamento.atualizar_progresso(75)
                     try:
-                        progresso = int(linha_limpa.split(':')[1].strip().replace('%', ''))
-                        processamento.atualizar_progresso(min(progresso, 100))
-                    except (ValueError, IndexError) as e:
-                        docker_logger.error(f"Erro ao processar progresso: {e}")
-            
-            # Aguarda o término do container
-            wait_cmd = f"docker wait {container_name}"
-            wait_processo = subprocess.Popen(
-                shlex.split(wait_cmd),
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True
+                        nome = linha.split("Resultado salvo como")[-1].strip()
+                        container_info["resultado_arquivo"] = nome
+                        processamento.resultado["container_info"] = container_info
+                        processamento.save(update_fields=["resultado"])
+                    except Exception:
+                        pass
+                elif "Upload concluído" in linha:
+                    processamento.atualizar_progresso(90)
+                elif "Pipeline ETL Concluído" in linha:
+                    processamento.atualizar_progresso(100)
+                elif "progresso:" in linha.lower():
+                    try:
+                        pct = int(linha.split("progresso:")[-1].strip().rstrip("%"))
+                        processamento.atualizar_progresso(min(pct, 100))
+                    except Exception as exc:
+                        docker_logger.error("Progresso malformado: %s", exc)
+
+            # 7) Aguarda término
+            run_proc.wait()
+            exit_code = run_proc.returncode or 0
+
+            # 8) Procura arquivos de resultado
+            arquivos = [f for f in output_dir.glob("SA_*.xlsx") if f.is_file()]
+            if arquivos:
+                arq = arquivos[0]
+                container_info.update(
+                    resultado_arquivo=arq.name,
+                    caminho_arquivo=str(arq),
+                )
+                docker_logger.info("Arquivo extraído: %s", arq.name)
+
+            # 9) Metadados finais
+            fim = datetime.now()
+            duracao = (
+                fim - datetime.fromisoformat(container_info["container_iniciado"])
+            ).total_seconds()
+
+            container_info.update(
+                container_finalizado=fim.isoformat(),
+                duracao_segundos=duracao,
+                exit_code=exit_code,
+                output_dir=str(output_dir),
             )
-            returncode = int(wait_processo.stdout.read().strip() or 0)
-            
-            # Captura logs de erro, se houver
-            err_cmd = f"docker logs {container_name} 2>&1 | grep -i error"
-            err_processo = subprocess.Popen(
-                err_cmd,
-                shell=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True
-            )
-            erros = err_processo.stdout.read().strip()
-            
-            # Calcula tempo de execução
-            tempo_final = datetime.now()
-            tempo_inicial = datetime.fromisoformat(container_info['container_iniciado'])
-            duracao_segundos = (tempo_final - tempo_inicial).total_seconds()
-            
-            # Atualiza informações do container
-            container_info['container_finalizado'] = tempo_final.isoformat()
-            container_info['duracao_segundos'] = duracao_segundos
-            container_info['exit_code'] = returncode
-            processamento.resultado['container_info'] = container_info
-            processamento.save(update_fields=['resultado'])
-            
-            # Remove o container após o processamento
-            rm_cmd = f"docker rm {container_name}"
-            subprocess.run(shlex.split(rm_cmd))
-            docker_logger.info(f"Container {container_name} removido após processamento")
-            
-            # Define o status de sucesso ou falha
-            if returncode == 0:
-                resultado = {
-                    'tipo': processamento.tipo,
-                    'mensagem': 'Processamento Docker concluído com sucesso',
-                    'timestamp': datetime.now().isoformat(),
-                    'container_info': container_info
-                }
-                processamento.concluir(resultado)
-                docker_logger.info(f"Processamento Docker RPA para o usuário {processamento.user.id} com ID {processamento.id} concluído com sucesso.")
+            processamento.resultado["container_info"] = container_info
+            processamento.save(update_fields=["resultado"])
+
+            # 10) Status final
+            if exit_code == 0:
+                processamento.concluir(
+                    {
+                        "tipo": processamento.tipo,
+                        "mensagem": "Processamento ETL concluído com sucesso",
+                        "timestamp": fim.isoformat(),
+                        **container_info,
+                    }
+                )
+                docker_logger.info("Processo %s concluído com sucesso.", processamento.id)
             else:
-                resultado = {
-                    'tipo': processamento.tipo,
-                    'mensagem': 'Processamento Docker falhou',
-                    'timestamp': datetime.now().isoformat(),
-                    'container_info': container_info,
-                    'erros_detectados': erros
-                }
-                processamento.falhar(f"Container falhou com código {returncode}. Erros: {erros}")
-                processamento.resultado = resultado
-                processamento.save(update_fields=['resultado'])
-                
-        except Exception as e:
-            docker_logger.error(f"Erro no processamento Docker RPA para o usuário {processamento.user.id} com ID {processamento.id}: {str(e)}")
-            processamento.falhar(str(e))
-            
-            # Tenta remover o container em caso de erro (limpeza)
+                processamento.falhar(
+                    f"Container retornou código {exit_code}."
+                )
+                docker_logger.error(
+                    "Processo %s falhou (exit=%s).", processamento.id, exit_code
+                )
+
+        except Exception as exc:
+            docker_logger.exception("Falha geral no Docker ETL: %s", exc)
+            processamento.falhar(str(exc))
+            # Limpeza (se ainda existir)
             try:
-                container_name = f"rpa_{processamento.id.replace('-', '')[:12]}"
-                rm_cmd = f"docker rm -f {container_name}"
-                subprocess.run(shlex.split(rm_cmd))
-                docker_logger.info(f"Container {container_name} removido após erro")
-            except Exception as cleanup_error:
-                docker_logger.error(f"Erro ao limpar o container: {str(cleanup_error)}")
+                subprocess.run(["docker", "rm", "-f", container_name])
+            except Exception:
+                pass
 
-
-class RPADockerViewSet(viewsets.ModelViewSet):
+class RPADockerViewSet(viewsets.ModelViewSet):  
     """ViewSet para gerenciar processamentos RPA via Docker."""
     permission_classes = [IsAuthenticated]
+    pagination_class = PageNumberPagination
 
     def get_queryset(self):
         return ProcessamentoRPA.objects.filter(
