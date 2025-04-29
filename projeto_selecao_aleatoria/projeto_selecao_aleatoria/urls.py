@@ -25,6 +25,7 @@ router.register(r'rpa', RPAViewSet, basename='rpa')
 router.register(r'historico-rpa', HistoricoRPAViewSet, basename='historico-rpa')
 router.register(r'docker-historico', DockerHistoricoViewSet, basename='docker-historico')
 router.register(r'docker-rpa', RPADockerViewSet, basename='docker-rpa')
+router.register(r'docker-historico', DockerHistoricoViewSet, basename='docker-historico')
 
 urlpatterns = [
     path('admin/', admin.site.urls),

@@ -13,7 +13,7 @@ from rest_framework.response import Response
 from rest_framework.pagination import PageNumberPagination
 
 from .models import ProcessamentoRPA, ProcessamentoRPATemplate
-from .serializers import RPADockerHistoricoSerializer, RPADockerSerializer, RPASerializer, RPACreateSerializer, RPAHistoricoSerializer
+from .serializers import RPADockerCreateSerializer, RPADockerHistoricoSerializer, RPADockerSerializer, RPASerializer, RPACreateSerializer, RPAHistoricoSerializer
 
 logger = logging.getLogger(__name__)
 
@@ -109,7 +109,8 @@ class RPAViewSet(viewsets.ModelViewSet):
         ).order_by('-criado_em')
 
     def get_serializer_class(self):
-        return RPACreateSerializer if self.action == 'create' else RPASerializer
+        return RPADockerSerializer
+
 
     def perform_create(self, serializer):
         """Salva o processamento associando ao usuário automaticamente."""
@@ -407,7 +408,10 @@ class RPADockerViewSet(viewsets.ModelViewSet):
         ).order_by('-criado_em')
 
     def get_serializer_class(self):
-        return RPADockerSerializer
+        if self.action == 'create':
+            return RPADockerCreateSerializer
+        return RPADockerSerializer  # para leitura histórica/listagem
+
 
     def perform_create(self, serializer):
         """Salva e inicia o processamento."""
@@ -415,15 +419,19 @@ class RPADockerViewSet(viewsets.ModelViewSet):
         RPADockerProcessor.processar_async(processamento)
 
     def create(self, request, *args, **kwargs):
-        """Cria um novo processamento Docker RPA."""
         serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
+        if not serializer.is_valid():
+            # loga o erro completo no console
+            logger.error("Erros validando payload Docker: %s", serializer.errors)
+            return Response(
+                {"erros": serializer.errors},
+                status=status.HTTP_400_BAD_REQUEST
+            )
         self.perform_create(serializer)
-
         headers = self.get_success_headers(serializer.data)
         return Response(
             {
-                'id': serializer.instance.id, 
+                'id': serializer.instance.id,
                 'mensagem': 'Processamento Docker RPA iniciado',
                 'tipo': 'docker_rpa'
             },
@@ -466,70 +474,80 @@ class RPADockerViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+# core/views.py (ou onde você tenha seus ViewSets)
+from rest_framework import viewsets
+from rest_framework.decorators import action
+from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
+
+from .models import ProcessamentoRPA
+from .serializers import RPADockerHistoricoSerializer
+from .views import HistoricoPagination  # sua classe de paginação customizada
 
 class DockerHistoricoViewSet(viewsets.ReadOnlyModelViewSet):
-    """ViewSet para listar histórico de processamentos Docker."""
+    """
+    ViewSet para listar e resumir o histórico de processamentos Docker do usuário.
+    Aceita ?page=…&page_size=… e ?status=pendente|processando|concluido|falha
+    """
+    serializer_class = RPADockerHistoricoSerializer
     permission_classes = [IsAuthenticated]
     pagination_class = HistoricoPagination
-    
-    def get_serializer_class(self):
-        return RPADockerHistoricoSerializer
-        
+    lookup_field = 'id'
+
     def get_queryset(self):
-        """Retorna todos os processamentos Docker do usuário."""
-        # Check if this is a schema request
-        is_swagger_fake_view = getattr(self, 'swagger_fake_view', False)
-        
-        if is_swagger_fake_view:
-            # Return empty queryset for swagger schema generation
-            return ProcessamentoRPA.objects.none()
-            
-        # Normal query for authenticated users
-        return ProcessamentoRPA.objects.filter(
+        # Base: apenas docker_rpa do usuário
+        qs = ProcessamentoRPA.objects.filter(
             user=self.request.user,
             tipo='docker_rpa'
-        ).order_by('-criado_em')
-    
+        )
+
+        # Se vier ?status=… aplica o filtro
+        status = self.request.query_params.get('status')
+        if status in {'pendente','processando','concluido','falha'}:
+            qs = qs.filter(status=status)
+
+        return qs.order_by('-criado_em')
+
     @action(detail=False, methods=['get'])
     def resumo(self, request):
-        """Retorna um resumo consolidado dos containers Docker executados."""
-        queryset = self.get_queryset()
-        
-        # Estatísticas básicas
-        total_executados = queryset.count()
-        concluidos = queryset.filter(status='concluido').count()
-        falhas = queryset.filter(status='falha').count()
-        
-        # Tempo médio de execução
-        tempo_medio = 0
-        containers_com_tempo = 0
-        
-        for proc in queryset.filter(status='concluido'):
-            if proc.resultado and isinstance(proc.resultado, dict) and 'container_info' in proc.resultado:
-                if 'duracao_segundos' in proc.resultado['container_info']:
-                    tempo_medio += proc.resultado['container_info']['duracao_segundos']
-                    containers_com_tempo += 1
-        
-        if containers_com_tempo > 0:
-            tempo_medio = tempo_medio / containers_com_tempo
-            
-        # Imagens mais usadas
+        """
+        Retorna estatísticas agregadas:
+         - total_executados
+         - concluidos
+         - falhas
+         - tempo_medio_segundos
+         - imagens_populares (top 5)
+        """
+        qs = self.get_queryset()
+        total_executados = qs.count()
+        concluidos      = qs.filter(status='concluido').count()
+        falhas          = qs.filter(status='falha').count()
+
+        # tempo médio de execução
+        soma = 0
+        cont = 0
+        for p in qs.filter(status='concluido'):
+            info = p.resultado.get('container_info') if p.resultado else None
+            if info and info.get('duracao_segundos') is not None:
+                soma += info['duracao_segundos']
+                cont += 1
+        tempo_medio = (soma / cont) if cont else 0
+
+        # imagens mais usadas
         imagens = {}
-        for proc in queryset:
-            if proc.resultado and isinstance(proc.resultado, dict) and 'container_info' in proc.resultado:
-                imagem = proc.resultado['container_info'].get('imagem', 'desconhecida')
-                if imagem in imagens:
-                    imagens[imagem] += 1
-                else:
-                    imagens[imagem] = 1
-                    
-        # Ordena por uso
-        imagens_ordenadas = sorted(imagens.items(), key=lambda x: x[1], reverse=True)
-        
+        for p in qs:
+            info = p.resultado.get('container_info') if p.resultado else None
+            img = info.get('imagem') if info else None
+            if img:
+                imagens[img] = imagens.get(img, 0) + 1
+        imagens_populares = dict(
+            sorted(imagens.items(), key=lambda x: x[1], reverse=True)[:5]
+        )
+
         return Response({
             'total_executados': total_executados,
             'concluidos': concluidos,
             'falhas': falhas,
             'tempo_medio_segundos': tempo_medio,
-            'imagens_populares': dict(imagens_ordenadas[:5])  # Top 5 imagens
+            'imagens_populares': imagens_populares,
         })

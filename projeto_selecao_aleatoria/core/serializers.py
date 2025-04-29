@@ -5,24 +5,10 @@ from .models import ProcessamentoRPA
 class RPACreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = ProcessamentoRPA
-        fields = [
-            'id', 
-            'tipo', 
-            'descricao', 
-            'dados_entrada'
-        ]
+        fields = ('tipo', 'dados_entrada')
         extra_kwargs = {
-            'id': {'read_only': True},
-            'descricao': {'required': False},
-            'dados_entrada': {'required': False}
+            'tipo': {'default': 'docker_rpa'},
         }
-
-    def validate_tipo(self, value):
-        # Validar se o tipo é um dos permitidos
-        tipos_validos = ['planilha', 'email', 'web', 'sistema']
-        if value not in tipos_validos:
-            raise serializers.ValidationError(f"Tipo inválido. Escolha entre: {', '.join(tipos_validos)}")
-        return value
 
 class RPASerializer(serializers.ModelSerializer):
     class Meta:
@@ -133,3 +119,15 @@ class RPADockerHistoricoSerializer(serializers.ModelSerializer):
         if obj.resultado and isinstance(obj.resultado, dict) and 'container_info' in obj.resultado:
             return obj.resultado['container_info'].get('duracao_segundos', 0)
         return 0
+    
+
+ 
+class RPADockerCreateSerializer(serializers.ModelSerializer):
+    # preenche automaticamente o tipo como 'docker_rpa'
+    tipo = serializers.HiddenField(default='docker_rpa')
+    # usa o mesmo nome do model
+    dados_entrada = serializers.JSONField()
+
+    class Meta:
+        model  = ProcessamentoRPA
+        fields = ['tipo', 'dados_entrada']
