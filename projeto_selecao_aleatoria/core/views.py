@@ -72,6 +72,14 @@ class RPAViewSet(viewsets.ModelViewSet):
     pagination_class  = PageNumberPagination
 
     def get_object(self):
+        # Check if this is a schema request
+        is_swagger_fake_view = getattr(self, 'swagger_fake_view', False)
+        
+        if is_swagger_fake_view:
+            # Return None or raise an appropriate exception for swagger
+            from rest_framework.exceptions import NotFound
+            raise NotFound("This is a schema request")
+            
         return ProcessamentoRPA.objects.get(
             id=self.kwargs['pk'],
             user=self.request.user
@@ -87,6 +95,14 @@ class RPAViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         """Somente processos ativos do usuário logado."""
+        # Check if this is a schema request
+        is_swagger_fake_view = getattr(self, 'swagger_fake_view', False)
+        
+        if is_swagger_fake_view:
+            # Return empty queryset for swagger schema generation
+            return ProcessamentoRPA.objects.none()
+            
+        # Normal query for authenticated users
         return ProcessamentoRPA.objects.filter(
             user=self.request.user,
             status__in=['pendente', 'processando']
@@ -154,6 +170,14 @@ class HistoricoRPAViewSet(viewsets.ReadOnlyModelViewSet):
     pagination_class = HistoricoPagination
 
     def get_queryset(self):
+        # Check if this is a schema request
+        is_swagger_fake_view = getattr(self, 'swagger_fake_view', False)
+        
+        if is_swagger_fake_view:
+            # Return empty queryset for swagger schema generation
+            return ProcessamentoRPA.objects.none()
+            
+        # Normal query for authenticated users
         return ProcessamentoRPA.objects.filter(
             user=self.request.user
         ).order_by('-criado_em')
@@ -368,6 +392,14 @@ class RPADockerViewSet(viewsets.ModelViewSet):
     pagination_class = PageNumberPagination
 
     def get_queryset(self):
+        # Check if this is a schema request
+        is_swagger_fake_view = getattr(self, 'swagger_fake_view', False)
+        
+        if is_swagger_fake_view:
+            # Return empty queryset for swagger schema generation
+            return ProcessamentoRPA.objects.none()
+            
+        # Normal query for authenticated users
         return ProcessamentoRPA.objects.filter(
             user=self.request.user,
             tipo='docker_rpa',
@@ -398,6 +430,17 @@ class RPADockerViewSet(viewsets.ModelViewSet):
             status=status.HTTP_201_CREATED,
             headers=headers
         )
+    
+    @action(detail=False, methods=['get'])
+    def ativos(self, request):
+        """Só processos docker pendentes ou processando."""
+        qs = ProcessamentoRPA.objects.filter(
+            user=request.user,
+            tipo='docker_rpa',
+            status__in=['pendente', 'processando']
+        ).order_by('-criado_em')
+        serializer = RPADockerSerializer(qs, many=True)
+        return Response(serializer.data)
     
     @action(detail=True, methods=['post'])
     def reiniciar(self, request, pk=None):
@@ -434,6 +477,14 @@ class DockerHistoricoViewSet(viewsets.ReadOnlyModelViewSet):
         
     def get_queryset(self):
         """Retorna todos os processamentos Docker do usuário."""
+        # Check if this is a schema request
+        is_swagger_fake_view = getattr(self, 'swagger_fake_view', False)
+        
+        if is_swagger_fake_view:
+            # Return empty queryset for swagger schema generation
+            return ProcessamentoRPA.objects.none()
+            
+        # Normal query for authenticated users
         return ProcessamentoRPA.objects.filter(
             user=self.request.user,
             tipo='docker_rpa'

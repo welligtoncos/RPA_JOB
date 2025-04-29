@@ -37,14 +37,14 @@ def create_user_folder(sender, instance, created, **kwargs):
         # put_object com Body vazio cria um objeto placeholder no prefixo
         s3.put_object(Bucket=bucket, Key=placeholder_key, Body=b"")
         logger.info(
-            "📂 Diretório criado no S3: s3://%s/%s",
+            "Diretório criado no S3: s3://%s/%s",
             bucket,
             prefix
         )
     except Exception as e:
         logger.error(
-            "❌ Falha ao criar diretório para user %s: %s",
-            instance.pk,
+            "Falha ao criar diretório para user %s: %s",
+            instance.pk,    
             e,
             exc_info=True
         )
