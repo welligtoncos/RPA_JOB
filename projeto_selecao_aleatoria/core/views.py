@@ -256,7 +256,7 @@ class RPADockerProcessor:
             processamento.iniciar_processamento()
 
             # 1) Dados base
-            imagem_docker = "selecao_aleatoria:v1.0"
+            imagem_docker = "selecao_aleatoria:v1.1"
             comando = processamento.dados_entrada.get(
                 "comando", "python /app/selecaoaleatoria.py"
             )
@@ -277,20 +277,62 @@ class RPADockerProcessor:
             output_dir.mkdir(parents=True, exist_ok=True)
             volume_option = RPADockerProcessor._make_volume_option(output_dir)
 
+            # 2.1) Adicionar volume para as credenciais AWS
+            aws_creds_dir = os.path.expanduser("~/.aws")
+            # Para Windows, ajustar o formato do caminho
+            if os.name == "nt":
+                drive, rest = os.path.splitdrive(aws_creds_dir)
+                aws_creds_dir_docker = f"/{drive.rstrip(':').lower()}{rest.replace('\\', '/')}"
+            else:
+                aws_creds_dir_docker = aws_creds_dir
+                
+            aws_volume = f"-v {aws_creds_dir_docker}:/root/.aws:ro"
+
+            # 2.2) Criar estrutura de diretórios no S3
+            try:
+                import boto3
+                from botocore.exceptions import ClientError
+                
+                # Usar perfil específico
+                session = boto3.Session(profile_name='appbeta-s3-user', region_name='us-east-2')
+                s3_client = session.client('s3')
+                
+                bucket_name = "appbeta-user-results"
+                
+                # Caminho para a pasta do processamento
+                s3_dir_key = f"selecao_aleatoria/usuarios/{processamento.user_id}/resultados/processamento_{processamento.id}/"
+                
+                # Criar diretório no S3
+                s3_client.put_object(
+                    Bucket=bucket_name,
+                    Key=s3_dir_key,
+                    Body=''
+                )
+                
+                # Registrar o caminho nos metadados do processamento
+                container_info["s3_directory"] = f"s3://{bucket_name}/{s3_dir_key}"
+                processamento.resultado["container_info"] = container_info
+                processamento.save(update_fields=["resultado"])
+                
+                docker_logger.info(f"Diretório S3 criado: s3://{bucket_name}/{s3_dir_key}")
+            except Exception as e:
+                docker_logger.error(f"Erro ao criar diretório no S3: {e}")
+
             # 3) Variáveis de ambiente
             env_vars = processamento.dados_entrada.get("env_vars", {})
             env_vars["USER_ID"] = str(processamento.user_id)
+            env_vars["PROCESSAMENTO_ID"] = str(processamento.id)
             env_option = " ".join(f"-e {k}='{v}'" for k, v in env_vars.items())
 
-            # 4) Comando docker
+            # 4) Comando docker (incluindo volume AWS)
             docker_cmd = (
                 f"docker run -it --rm --name {container_name} "
-                f"{volume_option} {env_option} {imagem_docker}"
+                f"{volume_option} {aws_volume} {env_option} {imagem_docker}"
             )
             
             if comando and comando != "python /app/selecaoaleatoria.py":
                 docker_cmd += f" {comando}"
-                
+                    
             docker_logger.info("Docker cmd: %s", docker_cmd)
 
             # 5) Executa container
@@ -348,7 +390,10 @@ class RPADockerProcessor:
                 # Upload para o S3 com a estrutura solicitada
                 try:
                     import boto3
-                    s3_client = boto3.client('s3')
+                    # Usar perfil específico
+                    session = boto3.Session(profile_name='appbeta-s3-user', region_name='us-east-2')
+                    s3_client = session.client('s3')
+                    
                     bucket_name = "appbeta-user-results"
                     
                     # Caminho no formato: selecao_aleatoria/usuarios/14/resultados/processamento_1/arquivo.xlsx
@@ -414,7 +459,6 @@ class RPADockerProcessor:
                 subprocess.run(["docker", "rm", "-f", container_name])
             except Exception:
                 pass
-
 class RPADockerViewSet(viewsets.ModelViewSet):  
     """ViewSet para gerenciar processamentos RPA via Docker."""
     permission_classes = [IsAuthenticated]
