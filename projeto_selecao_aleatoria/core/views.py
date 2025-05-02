@@ -11,9 +11,10 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from rest_framework.pagination import PageNumberPagination
+ 
 
-from .models import ProcessamentoRPA, ProcessamentoRPATemplate
-from .serializers import RPADockerCreateSerializer, RPADockerHistoricoSerializer, RPADockerSerializer, RPASerializer, RPACreateSerializer, RPAHistoricoSerializer
+from .models import ProcessamentoRPA
+from .serializers import RPADockerCreateSerializer, RPADockerHistoricoSerializer, RPADockerSerializer, RPAHistoricoSerializer
 
 logger = logging.getLogger(__name__)
 
@@ -236,13 +237,14 @@ class RPADockerProcessor:
     def processar_async(processamento):
         threading.Thread(
             target=RPADockerProcessor._processar,
-            args=(processamento,),
+            args=(processamento,),  
             daemon=True,
         ).start()
 
     # ──────────────────────────────────────────────────────────────────────────
     # LÓGICA PRINCIPAL
     # ──────────────────────────────────────────────────────────────────────────
+ 
     @staticmethod
     def _processar(processamento):
         try:
@@ -254,49 +256,53 @@ class RPADockerProcessor:
             processamento.iniciar_processamento()
 
             # 1) Dados base
-            imagem_docker = "sharepoint-etl"          # sem tag ⇒ latest
-            comando       = processamento.dados_entrada.get(
-                "comando", "python /app/sharepoint_etl.py"
+            imagem_docker = "selecao_aleatoria:v1.0"
+            comando = processamento.dados_entrada.get(
+                "comando", "python /app/selecaoaleatoria.py"
             )
-            container_name = f"etl_{str(processamento.id).replace('-', '')[:12]}"
+            container_name = f"selecao-aleatoria-{str(processamento.id).replace('-', '')[:12]}"
 
             container_info = {
                 "container_iniciado": datetime.now().isoformat(),
                 "imagem": imagem_docker,
                 "comando": comando,
                 "container_name": container_name,
+                "user_id": processamento.user_id,
             }
             processamento.resultado = {"container_info": container_info}
             processamento.save(update_fields=["resultado"])
 
-            # 2) Saída (host)
-            output_dir = Path("docker_output") / container_name
+            # 2) Criar estrutura de diretórios local temporária para os resultados
+            output_dir = Path(f"temp_output/{processamento.user_id}/processamento_{processamento.id}")
             output_dir.mkdir(parents=True, exist_ok=True)
             volume_option = RPADockerProcessor._make_volume_option(output_dir)
 
-            # 3) Variáveis de ambiente opcionais
-            env_vars   = processamento.dados_entrada.get("env_vars", {})
+            # 3) Variáveis de ambiente
+            env_vars = processamento.dados_entrada.get("env_vars", {})
+            env_vars["USER_ID"] = str(processamento.user_id)
             env_option = " ".join(f"-e {k}='{v}'" for k, v in env_vars.items())
 
-            # 4) Comando docker: -it + --rm + nome fixo
+            # 4) Comando docker
             docker_cmd = (
                 f"docker run -it --rm --name {container_name} "
-                f"{volume_option} {env_option} {imagem_docker} {comando}"
+                f"{volume_option} {env_option} {imagem_docker}"
             )
+            
+            if comando and comando != "python /app/selecaoaleatoria.py":
+                docker_cmd += f" {comando}"
+                
             docker_logger.info("Docker cmd: %s", docker_cmd)
 
-            # 5) Executa container (Popen para ler logs)
+            # 5) Executa container
             run_proc = subprocess.Popen(
-            shlex.split(docker_cmd),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            encoding='utf-8',       # força UTF-8
-            errors='replace',       # substitui bytes inválidos por �
-            bufsize=1,
-        )
-            # container_id é a primeira linha de saída em modo -it? Não; vamos
-            # apenas usar o nome do container para 'wait' e 'logs'.
+                shlex.split(docker_cmd),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                encoding='utf-8',
+                errors='replace',
+                bufsize=1,
+            )
 
             # 6) Stream dos logs
             for linha in run_proc.stdout:
@@ -334,15 +340,37 @@ class RPADockerProcessor:
             run_proc.wait()
             exit_code = run_proc.returncode or 0
 
-            # 8) Procura arquivos de resultado
+            # 8) Procura arquivos de resultado e faz upload para S3
             arquivos = [f for f in output_dir.glob("SA_*.xlsx") if f.is_file()]
             if arquivos:
                 arq = arquivos[0]
-                container_info.update(
-                    resultado_arquivo=arq.name,
-                    caminho_arquivo=str(arq),
-                )
-                docker_logger.info("Arquivo extraído: %s", arq.name)
+                
+                # Upload para o S3 com a estrutura solicitada
+                try:
+                    import boto3
+                    s3_client = boto3.client('s3')
+                    bucket_name = "appbeta-user-results"
+                    
+                    # Caminho no formato: selecao_aleatoria/usuarios/14/resultados/processamento_1/arquivo.xlsx
+                    s3_key = f"selecao_aleatoria/usuarios/{processamento.user_id}/resultados/processamento_{processamento.id}/{arq.name}"
+                    
+                    # Upload do arquivo
+                    s3_client.upload_file(str(arq), bucket_name, s3_key)
+                    
+                    # Caminho completo para o arquivo no S3
+                    s3_path = f"s3://{bucket_name}/{s3_key}"
+                    container_info.update(
+                        resultado_arquivo=arq.name,
+                        caminho_arquivo=s3_path,
+                    )
+                    docker_logger.info(f"Arquivo enviado para S3: {s3_path}")
+                except Exception as e:
+                    # Fallback para caminho local se falhar o upload
+                    docker_logger.error(f"Erro ao enviar para S3: {e}")
+                    container_info.update(
+                        resultado_arquivo=arq.name,
+                        caminho_arquivo=str(arq),
+                    )
 
             # 9) Metadados finais
             fim = datetime.now()

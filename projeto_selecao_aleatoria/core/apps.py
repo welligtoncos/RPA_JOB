@@ -8,4 +8,4 @@ class CoreConfig(AppConfig):
 
     def ready(self):
         # importa só para garantir que os receivers sejam registrados
-        import core.signals
+        import core.s3_manager
