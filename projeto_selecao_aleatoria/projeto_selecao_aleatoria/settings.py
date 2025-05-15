@@ -45,6 +45,41 @@ else:
         
 ALLOWED_HOSTS = []
 
+# Adicione isso ao seu settings.py
+SWAGGER_SETTINGS = {
+    'SECURITY_DEFINITIONS': {
+        'Bearer': {
+            'type': 'apiKey',
+            'name': 'Authorization',
+            'in': 'header',
+            'description': 'Format: Bearer <JWT token>'
+        },
+    },
+    'USE_SESSION_AUTH': True,
+    'LOGIN_URL': '/admin/login/',
+    'LOGOUT_URL': '/admin/logout/',
+    'PERSIST_AUTH': True,
+    'REFETCH_SCHEMA_WITH_AUTH': True,
+    'REFETCH_SCHEMA_ON_LOGOUT': True,
+}
+
+# Configurações do JWT
+from datetime import timedelta
+
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(hours=1),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
+    'ROTATE_REFRESH_TOKENS': False,
+    'BLACKLIST_AFTER_ROTATION': True,
+    'ALGORITHM': 'HS256',
+    'SIGNING_KEY': SECRET_KEY,
+    'VERIFYING_KEY': None,
+    'AUTH_HEADER_TYPES': ('Bearer',),
+    'USER_ID_FIELD': 'id',
+    'USER_ID_CLAIM': 'user_id',
+    'AUTH_TOKEN_CLASSES': ('rest_framework_simplejwt.tokens.AccessToken',),
+    'TOKEN_TYPE_CLAIM': 'token_type',
+}
 
 # Application definition
 
@@ -145,16 +180,14 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # Configurações do REST Framework
 REST_FRAMEWORK = {
-     # ❌ aqui está liberado para todo mundo
-    # 'DEFAULT_PERMISSION_CLASSES': [
-    #     'rest_framework.permissions.AllowAny', 
-    # ],
-
     'DEFAULT_PERMISSION_CLASSES': [
-    'rest_framework.permissions.IsAuthenticated',
+        'rest_framework.permissions.IsAuthenticated',
     ],
     'DEFAULT_AUTHENTICATION_CLASSES': [
-        'rest_framework_simplejwt.authentication.JWTAuthentication',  # 🔥 adiciona para Django aceitar Bearer token!
+        # Remova 'rest_framework.permissions.IsAuthenticated' daqui
+        'rest_framework_simplejwt.authentication.JWTAuthentication',  # Para autenticação JWT
+        'rest_framework.authentication.SessionAuthentication',  # Adicione para suportar autenticação por sessão
+        'rest_framework.authentication.BasicAuthentication',  # Adicione para suportar autenticação básica
     ],
 }
 

@@ -78,3 +78,18 @@ python teste_processamento_massa.py
 Construa a imagem Docker com docker build -t meu-rpa:1.0 .
 Configure a URL no urls.py para apontar para o novo ViewSet
 Use a API para iniciar um processamento, enviando a imagem Docker e comando necessários
+
+
+chmod +x test_api.sh
+
+.\test_processamentos_api.ps1
+
+
+
+venv\Scripts\activate
+
+1 - venv ativado
+
+2- C:\rsm_projects_data\projeto_SA\RPA_JOB\projeto_selecao_aleatoria>
+
+3 - python manage.py runserver
