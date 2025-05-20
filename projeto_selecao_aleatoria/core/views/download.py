@@ -148,21 +148,30 @@ class ResultadoDownloadViewSet(viewsets.ReadOnlyModelViewSet):
                            status=status.HTTP_404_NOT_FOUND)
         
         try:
-            # Download e retorno do arquivo
-            # Implementação completa do método download_file aqui
-            # [código original mantido]
-            
-            # Configurar o cliente S3 com credenciais específicas, se necessário
-            try:
-                # Tentar usar o perfil específico
-                session = boto3.Session(profile_name='appbeta-s3-user', region_name='us-east-2')
-                s3_client = session.client('s3')
-            except Exception:
-                # Fallback para credenciais padrão
-                s3_client = boto3.client('s3')
-            
-            # Restante da implementação do download...
-            # [código original mantido]
+        # Tentar usar o perfil específico
+            session = boto3.Session(profile_name='appbeta-s3-user', region_name='us-east-2')
+            s3_client = session.client('s3')
+        except Exception:
+            s3_client = boto3.client('s3', region_name='us-east-2')
+
+        try:
+             # Faz o download do objeto
+            logger.info(f"Baixando de bucket={bucket_name}, chave={s3_key}")
+            response = s3_client.get_object(Bucket=bucket_name, Key=s3_key)
+            file_content = response['Body'].read()
+
+            # Detecta o tipo MIME
+            content_type, _ = mimetypes.guess_type(file_name)
+            content_type = content_type or 'application/octet-stream'
+
+            # Retorna o arquivo como resposta HTTP
+            return HttpResponse(
+                file_content,
+                content_type=content_type,
+                headers={
+                    'Content-Disposition': f'attachment; filename="{file_name}"'
+                }
+            )
             
         except ClientError as e:
             logger.error(f"Erro ao baixar arquivo do S3: {e}")

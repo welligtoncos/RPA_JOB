@@ -51,6 +51,10 @@ router.register(
     UserDockerProcessamentoViewSet,
     basename='user-docker-processamento'
 )
+router.register(r'rpa/resultados', ResultadoDownloadViewSet, basename='resultados') 
+router.register(r'rpa', RPAViewSet, basename='rpa')
+
+
 
 urlpatterns = [
     path('admin/', admin.site.urls),
