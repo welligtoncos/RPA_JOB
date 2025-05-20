@@ -146,19 +146,6 @@ MIDDLEWARE = [
 # Configuração CORS - em produção, especifique apenas origens permitidas
 #CORS_ALLOW_ALL_ORIGINS = True  
 
-CORS_ALLOW_HEADERS = [
-    "accept",
-    "accept-encoding",
-    "authorization",
-    "content-type",
-    "origin",
-    "dnt",
-    "user-agent",
-    "x-csrftoken",
-    "x-requested-with",
-]
-
-
 CORS_ALLOWED_ORIGINS = [
      "http://localhost:4200",
      

@@ -38,9 +38,7 @@ router.register(r'rpa', RPAViewSet, basename='rpa')
 router.register(r'historico-rpa', HistoricoRPAViewSet, basename='histforico-rpa')
 router.register(r'docker-historico', DockerHistoricoViewSet, basename='docker-historico')
 router.register(r'docker-rpa', RPADockerViewSet, basename='docker-rpa')
-#router.register(r'resultados', ResultadoDownloadViewSet, basename='resultados') 
-router.register(r'rpa/resultados', ResultadoDownloadViewSet, basename='resultados')
-
+router.register(r'resultados', ResultadoDownloadViewSet, basename='resultados')
 
 # Router para as APIs de processamento por usuário
 router.register(
@@ -53,8 +51,8 @@ router.register(
     UserDockerProcessamentoViewSet,
     basename='user-docker-processamento'
 )
- 
-
+router.register(r'rpa/resultados', ResultadoDownloadViewSet, basename='resultados') 
+router.register(r'rpa', RPAViewSet, basename='rpa')
 
 
 
