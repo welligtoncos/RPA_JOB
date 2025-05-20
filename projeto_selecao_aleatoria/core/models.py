@@ -92,7 +92,8 @@ class ProcessamentoRPA(models.Model):
     concluido_em = models.DateTimeField(null=True, blank=True)
     tempo_estimado = models.IntegerField(default=60, help_text="Tempo estimado em segundos")
     tempo_real = models.IntegerField(null=True, blank=True, help_text="Tempo real em segundos")
-    
+    #atualizado_em = models.DateTimeField(auto_now=True, null=True)  # Temporário!
+
     # Campos para rastreamento de armazenamento S3
     s3_directory = models.CharField(max_length=255, blank=True, null=True, help_text="Diretório S3 para este processamento")
     
