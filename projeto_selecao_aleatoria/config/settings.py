@@ -157,8 +157,8 @@ CORS_ALLOW_CREDENTIALS = True
 #==============================================================================
 # 7. TEMPLATES E URLS
 #==============================================================================
-ROOT_URLCONF = 'projeto_selecao_aleatoria.urls'
-WSGI_APPLICATION = 'projeto_selecao_aleatoria.wsgi.application'
+ROOT_URLCONF = 'config.urls' 
+WSGI_APPLICATION = 'config.wsgi.application' 
 
 TEMPLATES = [
     {
