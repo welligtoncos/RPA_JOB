@@ -10,6 +10,9 @@ from core.views import (
     UserDockerProcessamentoViewSet,
     ResultadoDownloadViewSet
 )
+ 
+from core.views.user_group import UserGroupAPIView, get_user_group, get_user_group_by_id
+
 from rest_framework_simplejwt.views import (
     TokenObtainPairView,
     TokenRefreshView,
@@ -63,6 +66,16 @@ urlpatterns = [
     # ✅ JWT Authentication
     path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    
+     # 🔥 Novos endpoints para grupos de usuário
+    # Opção 1: APIView
+    path('api/user/group/', UserGroupAPIView.as_view(), name='user-group'),
+    
+    # Opção 2: Function-based view
+    path('api/user/me/group/', get_user_group, name='user-me-group'),
+    
+    # Opção 3: Buscar grupo por ID (apenas admins)
+    path('api/user/<int:user_id>/group/', get_user_group_by_id, name='user-group-by-id'),
 
     # ✅ Autenticação para Swagger - Adicionar estas linhas
     path('accounts/login/', RedirectView.as_view(url='/admin/login/?next=/swagger/', permanent=False), name='account_login'),

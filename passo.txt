@@ -86,6 +86,8 @@ chmod +x test_api.sh
 
 
 
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+
 venv\Scripts\activate
 
 1 - venv ativado
@@ -93,3 +95,12 @@ venv\Scripts\activate
 2- C:\rsm_projects_data\projeto_SA\RPA_JOB\projeto_selecao_aleatoria>
 
 3 - python manage.py runserver
+
+C:\Program Files\Docker\Docker\resources\bin
+
+Get-Service -Name "*docker*"
+
+
+http://127.0.0.1:8000/swagger/
+
+http://127.0.0.1:8000/admin/auth/user/
