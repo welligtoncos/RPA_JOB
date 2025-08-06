@@ -13,6 +13,8 @@ from core.views import (
  
 from core.views.user_group import UserGroupAPIView, get_user_group, get_user_group_by_id
 
+from core.views.views_processamento_rpa import ProcessamentoRPAViewSet
+
 from rest_framework_simplejwt.views import (
     TokenObtainPairView,
     TokenRefreshView,
@@ -42,6 +44,7 @@ router.register(r'historico-rpa', HistoricoRPAViewSet, basename='histforico-rpa'
 router.register(r'docker-historico', DockerHistoricoViewSet, basename='docker-historico')
 router.register(r'docker-rpa', RPADockerViewSet, basename='docker-rpa')
 router.register(r'resultados', ResultadoDownloadViewSet, basename='resultados')
+router.register(r'processamentos', ProcessamentoRPAViewSet, basename='processamentos')
 
 # Router para as APIs de processamento por usuário
 router.register(
