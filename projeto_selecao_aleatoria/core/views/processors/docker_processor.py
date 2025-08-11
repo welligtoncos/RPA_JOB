@@ -4,30 +4,18 @@ from datetime import datetime
 
 docker_logger = logging.getLogger("docker_rpa")
 
+ # helper no topo do arquivo (depois dos imports)
+def _safe_console(s: str) -> str:
+    # Remove apenas chars que não existem no cp1252 (emojis, etc.); mantém acentos.
+    return s.encode("cp1252", "ignore").decode("cp1252") if os.name == "nt" else s
+
 class RPADockerProcessor:
     """
     Executa o ETL dentro de um container Docker, fazendo stream dos logs e
     atualizando o modelo ProcessamentoRPA em tempo real.
     """
 
-    # ──────────────────────────────────────────────────────────────────────────
-    # HELPERS
-    # ──────────────────────────────────────────────────────────────────────────
-    @staticmethod
-    def _make_volume_option(output_dir: Path) -> str:
-        """
-        Gera string -v <host_abs>:<container_dir>:rw compatível com Linux/macOS
-        e Windows (C:\ → /c/).
-        """
-        host_path = output_dir.resolve()           # sempre absoluto
-
-        if os.name == "nt":                        # Windows
-            drive, rest = os.path.splitdrive(host_path)
-            docker_host = f"/{drive.rstrip(':').lower()}{rest.replace('\\', '/')}"
-        else:                                      # Unix-like já serve
-            docker_host = str(host_path)
-
-        return f"-v {docker_host}:/app/output:rw"
+ 
 
     # ──────────────────────────────────────────────────────────────────────────
     # DISPARA EM THREAD
@@ -39,6 +27,9 @@ class RPADockerProcessor:
             args=(processamento,),  
             daemon=True,
         ).start()
+
+    
+
 
     # ──────────────────────────────────────────────────────────────────────────
     # LÓGICA PRINCIPAL
@@ -54,16 +45,14 @@ class RPADockerProcessor:
             )
             processamento.iniciar_processamento()
 
-            # 1) Dados base
-            imagem_docker = "selecao_aleatoria:v1.1"
-            comando = processamento.dados_entrada.get(
-                "comando", "python /app/selecaoaleatoria.py"
-            )
+            # 1) Dados base 
+            imagem_docker = "selecao_aleatoria:v2.2"  # use a mesma tag em todo lugar
+            comando = processamento.dados_entrada.get("comando", "python -u main.py")
             container_name = f"selecao-aleatoria-{str(processamento.id).replace('-', '')[:12]}"
 
             container_info = {
                 "container_iniciado": datetime.now().isoformat(),
-                "imagem": imagem_docker,
+                "imagem": imagem_docker,          # agora bate com o docker run
                 "comando": comando,
                 "container_name": container_name,
                 "user_id": processamento.user_id,
@@ -71,26 +60,15 @@ class RPADockerProcessor:
             processamento.resultado = {"container_info": container_info}
             processamento.save(update_fields=["resultado"])
 
+
             # 2) Criar estrutura de diretórios local temporária para os resultados
             output_dir = Path(f"temp_output/{processamento.user_id}/processamento_{processamento.id}")
-            output_dir.mkdir(parents=True, exist_ok=True)
-            volume_option = RPADockerProcessor._make_volume_option(output_dir)
-
-            # 2.1) Adicionar volume para as credenciais AWS
-            aws_creds_dir = os.path.expanduser("~/.aws")
-            # Para Windows, ajustar o formato do caminho
-            if os.name == "nt":
-                drive, rest = os.path.splitdrive(aws_creds_dir)
-                aws_creds_dir_docker = f"/{drive.rstrip(':').lower()}{rest.replace('\\', '/')}"
-            else:
-                aws_creds_dir_docker = aws_creds_dir
-                
-            aws_volume = f"-v {aws_creds_dir_docker}:/root/.aws:ro"
+            output_dir.mkdir(parents=True, exist_ok=True) 
+  
 
             # 2.2) Criar estrutura de diretórios no S3
             try:
-                import boto3
-                from botocore.exceptions import ClientError
+                import boto3 
                 
                 # Usar perfil específico
                 session = boto3.Session(profile_name='appbeta-s3-user', region_name='us-east-2')
@@ -117,40 +95,69 @@ class RPADockerProcessor:
             except Exception as e:
                 docker_logger.error(f"Erro ao criar diretório no S3: {e}")
 
-            # 3) Variáveis de ambiente
+          # 3) Variáveis de ambiente (inclui AWS e OUTPUT_DIR)
             env_vars = processamento.dados_entrada.get("env_vars", {})
-            env_vars["USER_ID"] = str(processamento.user_id)
-            env_vars["PROCESSAMENTO_ID"] = str(processamento.id)
-            env_option = " ".join(f"-e {k}='{v}'" for k, v in env_vars.items())
+            env_vars.update({
+                "USER_ID": str(processamento.user_id),
+                "PROCESSAMENTO_ID": str(processamento.id),
+                "OUTPUT_DIR": "/app/output",  # garanta que seu salvar_excel use isso
+                "AWS_REGION": os.getenv("AWS_REGION", "us-east-2"),
+                "AWS_S3_BUCKET": os.getenv("AWS_S3_BUCKET", "appbeta-user-results"),
+                "AWS_PROFILE": os.getenv("AWS_PROFILE", "appbeta-s3-user"),
+                "S3_SSE": os.getenv("S3_SSE", "AES256"),
+                "S3_BASE_PREFIX": os.getenv("S3_BASE_PREFIX", "selecao_aleatoria"),
+            })
 
-            # 4) Comando docker (incluindo volume AWS)
-            docker_cmd = (
-                f"docker run -it --rm --name {container_name} "
-                f"{volume_option} {aws_volume} {env_option} {imagem_docker}"
-            )
-            
-            if comando and comando != "python /app/selecaoaleatoria.py":
-                docker_cmd += f" {comando}"
-                    
-            docker_logger.info("Docker cmd: %s", docker_cmd)
+            # 4) Volumes (output + dados + ~/.aws)
+            def to_docker_path(p: str) -> str:
+                if os.name == "nt":
+                    drive, rest = os.path.splitdrive(p)
+                    return f"/{drive.rstrip(':').lower()}{rest.replace('\\', '/')}"
+                return p
 
-            # 5) Executa container
+            output_dir.mkdir(parents=True, exist_ok=True)
+            host_output = to_docker_path(str(output_dir.resolve()))
+
+            aws_creds_dir = os.path.expanduser("~/.aws")
+            aws_creds_dir_docker = to_docker_path(aws_creds_dir)
+
+            dados_dir = Path(f"temp_dados/{processamento.user_id}/processamento_{processamento.id}")
+            dados_dir.mkdir(parents=True, exist_ok=True)
+            host_dados = to_docker_path(str(dados_dir.resolve()))
+
+            # 5) docker run como LISTA (sem -it, sem aspas simples) 
+            args = [
+                "docker", "run", "--rm",
+                "--name", container_name,
+                "-w", "/app",
+                "-v", f"{host_output}:/app/output:rw",
+                "-v", f"{aws_creds_dir_docker}:/root/.aws:ro",
+                "-v", f"{host_dados}:/app/dados:rw",
+            ]
+            for k, v in env_vars.items():
+                args += ["-e", f"{k}={v}"]
+
+            args.append(imagem_docker)
+            if comando and comando.strip():
+                args += shlex.split(comando)
+
+            docker_logger.info("Docker args: %s", args)
+
+            # 6) Executa container e stream de logs
             run_proc = subprocess.Popen(
-                shlex.split(docker_cmd),
+                args,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
-                encoding='utf-8',
-                errors='replace',
+                encoding="utf-8",
+                errors="replace",
                 bufsize=1,
             )
-
-            # 6) Stream dos logs
             for linha in run_proc.stdout:
                 linha = linha.rstrip()
-                docker_logger.info("[%s] %s", container_name, linha)
+                docker_logger.info("[%s] %s", container_name, _safe_console(linha))  # <- sem emojis no console
 
-                # Atualiza progresso por palavras-chave
+                # Use a linha original para detectar progresso (funciona mesmo com emojis)
                 if any(p in linha for p in ("Baixando arquivo", "Extraindo dados")):
                     processamento.atualizar_progresso(25)
                 elif any(p in linha for p in ("Transformação", "Coluna para acessar")):
@@ -159,23 +166,10 @@ class RPADockerProcessor:
                     processamento.atualizar_progresso(60)
                 elif "Resultado salvo como" in linha:
                     processamento.atualizar_progresso(75)
-                    try:
-                        nome = linha.split("Resultado salvo como")[-1].strip()
-                        container_info["resultado_arquivo"] = nome
-                        processamento.resultado["container_info"] = container_info
-                        processamento.save(update_fields=["resultado"])
-                    except Exception:
-                        pass
                 elif "Upload concluído" in linha:
                     processamento.atualizar_progresso(90)
                 elif "Pipeline ETL Concluído" in linha:
                     processamento.atualizar_progresso(100)
-                elif "progresso:" in linha.lower():
-                    try:
-                        pct = int(linha.split("progresso:")[-1].strip().rstrip("%"))
-                        processamento.atualizar_progresso(min(pct, 100))
-                    except Exception as exc:
-                        docker_logger.error("Progresso malformado: %s", exc)
 
             # 7) Aguarda término
             run_proc.wait()
@@ -199,8 +193,11 @@ class RPADockerProcessor:
                     s3_key = f"selecao_aleatoria/usuarios/{processamento.user_id}/resultados/processamento_{processamento.id}/{arq.name}"
                     
                     # Upload do arquivo
-                    s3_client.upload_file(str(arq), bucket_name, s3_key)
-                    
+                    s3_client.upload_file(
+                        str(arq), bucket_name, s3_key,
+                        ExtraArgs={"ServerSideEncryption": "AES256", "ContentType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}
+                    )
+
                     # Caminho completo para o arquivo no S3
                     s3_path = f"s3://{bucket_name}/{s3_key}"
                     container_info.update(
