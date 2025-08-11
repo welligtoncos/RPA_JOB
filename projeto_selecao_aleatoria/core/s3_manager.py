@@ -11,3 +11,4 @@ from core.services.s3.manager import S3DirectoryManager
 
 # Re-exportamos a classe para manter compatibilidade com código existente
 __all__ = ['S3DirectoryManager']
+

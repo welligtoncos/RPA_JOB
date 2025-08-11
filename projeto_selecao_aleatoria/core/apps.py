@@ -17,12 +17,5 @@ class CoreConfig(AppConfig):
     verbose_name = 'Seleção Aleatória'
 
     def ready(self):
-        # Este método é chamado quando a aplicação é inicializada
-        # Importamos o módulo services.s3 para garantir que os receivers de signals sejam registrados
-        # Os receivers são funções que respondem a eventos do Django (como salvar modelos)
-        import core.s3_manager
-        #import core.services.s3
-
-        # Importamos outros módulos que podem conter receivers
-        # (descomente conforme necessário)
-        # import core.signals
+        import core.services.s3.signals
+  

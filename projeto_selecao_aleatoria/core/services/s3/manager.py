@@ -34,25 +34,20 @@ class S3DirectoryManager:
     
     def create_user_directory_structure(self, user_id):
         """
-        Cria a estrutura de diretórios para um usuário.
-        
-        Args:
-            user_id: ID do usuário para o qual criar diretórios
-            
-        Returns:
-            String com o caminho do diretório base criado
-            
-        Raises:
-            ClientError: Se ocorrer um erro ao acessar o S3
+        Cria a árvore do usuário:
+          selecao_aleatoria/usuarios/{user}/
+          selecao_aleatoria/usuarios/{user}/input_sa/
+          selecao_aleatoria/usuarios/{user}/resultados/
         """
         user_id_str = str(user_id)
         
         # Diretório base no formato solicitado
         base_dir = f"selecao_aleatoria/usuarios/{user_id_str}/"
+        input_dir  = f"{base_dir}input_sa/"
         result_dir = f"{base_dir}resultados/"
         
         # Criar diretórios
-        for directory in [base_dir, result_dir]:
+        for directory in [base_dir, input_dir, result_dir]:
             try:
                 self.s3_client.put_object(
                     Bucket=self.bucket_name,
@@ -162,3 +157,65 @@ class S3DirectoryManager:
         except ClientError as e:
             logger.error(f"Erro ao enviar arquivo: {e}")
             return None
+        
+     # --- NOVO: detectar versionamento do bucket
+    def _bucket_is_versioned(self) -> bool:
+        try:
+            resp = self.s3_client.get_bucket_versioning(Bucket=self.bucket_name)
+            return resp.get("Status") == "Enabled"
+        except ClientError as e:
+            logger.warning(f"Não foi possível verificar versionamento do bucket: {e}")
+            return False
+
+    # --- NOVO: apagar tudo sob um prefixo (com paginação e batch)
+    def _delete_prefix(self, prefix: str):
+        versioned = self._bucket_is_versioned()
+        if versioned:
+            paginator = self.s3_client.get_paginator("list_object_versions")
+            page_it = paginator.paginate(Bucket=self.bucket_name, Prefix=prefix)
+            batch = []
+            for page in page_it:
+                for v in page.get("Versions", []):
+                    batch.append({"Key": v["Key"], "VersionId": v["VersionId"]})
+                    if len(batch) == 1000:
+                        self.s3_client.delete_objects(Bucket=self.bucket_name, Delete={"Objects": batch})
+                        batch.clear()
+                for d in page.get("DeleteMarkers", []):
+                    batch.append({"Key": d["Key"], "VersionId": d["VersionId"]})
+                    if len(batch) == 1000:
+                        self.s3_client.delete_objects(Bucket=self.bucket_name, Delete={"Objects": batch})
+                        batch.clear()
+            if batch:
+                self.s3_client.delete_objects(Bucket=self.bucket_name, Delete={"Objects": batch})
+        else:
+            paginator = self.s3_client.get_paginator("list_objects_v2")
+            page_it = paginator.paginate(Bucket=self.bucket_name, Prefix=prefix)
+            batch = []
+            for page in page_it:
+                for obj in page.get("Contents", []):
+                    batch.append({"Key": obj["Key"]})
+                    if len(batch) == 1000:
+                        self.s3_client.delete_objects(Bucket=self.bucket_name, Delete={"Objects": batch})
+                        batch.clear()
+            if batch:
+                self.s3_client.delete_objects(Bucket=self.bucket_name, Delete={"Objects": batch})
+
+        logger.info(f"Prefixo removido: s3://{self.bucket_name}/{prefix}")
+
+    # --- NOVO: apagar toda a “pasta” do usuário (input_sa + resultados + subpastas)
+    def delete_user_directory(self, user_id):
+        prefix = f"selecao_aleatoria/usuarios/{user_id}/"
+        try:
+            self._delete_prefix(prefix)
+        except ClientError as e:
+            logger.error(f"Erro ao remover diretório do usuário {user_id}: {e}")
+            raise
+
+    # (opcional) apagar só um processamento específico
+    def delete_process_directory(self, processamento):
+        prefix = f"selecao_aleatoria/usuarios/{processamento.user_id}/resultados/processamento_{processamento.id}/"
+        try:
+            self._delete_prefix(prefix)
+        except ClientError as e:
+            logger.error(f"Erro ao remover diretório do processamento {processamento.id}: {e}")
+            raise
