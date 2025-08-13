@@ -219,3 +219,29 @@ class S3DirectoryManager:
         except ClientError as e:
             logger.error(f"Erro ao remover diretório do processamento {processamento.id}: {e}")
             raise
+    
+    def upload_input_fileobj(self, user_id, fileobj, file_name: str, ensure_dirs: bool = True) -> str | None:
+        """
+        Envia um arquivo (objeto de arquivo seekable) para:
+        selecao_aleatoria/usuarios/{user_id}/input_sa/{file_name}
+        """
+        user_id_str = str(user_id).strip()
+        prefix_dir = f"selecao_aleatoria/usuarios/{user_id_str}/input_sa/"
+        s3_key = f"{prefix_dir}{file_name}"
+
+        try:
+            if ensure_dirs:
+                # cria "pasta" (idempotente)
+                self.s3_client.put_object(Bucket=self.bucket_name, Key=prefix_dir, Body=b'')
+
+            # garanta que o ponteiro está no início
+            try:
+                fileobj.seek(0)
+            except Exception:
+                pass
+
+            self.s3_client.upload_fileobj(fileobj, self.bucket_name, s3_key)
+            return format_s3_path(self.bucket_name, s3_key)
+        except ClientError as e:
+            logger.error(f"[S3 input_sa] Erro ao enviar fileobj: {e}")
+            return None

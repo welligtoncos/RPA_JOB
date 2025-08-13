@@ -1,5 +1,5 @@
 from django.contrib import admin
-from django.urls import path, include, re_path
+from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from core.views import (
     DockerHistoricoViewSet, 
@@ -14,6 +14,8 @@ from core.views import (
 from core.views.user_group import UserGroupAPIView, get_user_group, get_user_group_by_id
 
 from core.views.views_processamento_rpa import ProcessamentoRPAViewSet
+
+from core.views.UploadParaInputSAView import UploadParaInputSAView
 
 from rest_framework_simplejwt.views import (
     TokenObtainPairView,
@@ -56,11 +58,7 @@ router.register(
     r'usuarios/(?P<user_id>\d+)/docker-processamentos',
     UserDockerProcessamentoViewSet,
     basename='user-docker-processamento'
-)
-router.register(r'rpa/resultados', ResultadoDownloadViewSet, basename='resultados') 
-router.register(r'rpa', RPAViewSet, basename='rpa')
-
-
+)  
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -84,6 +82,10 @@ urlpatterns = [
     path('accounts/login/', RedirectView.as_view(url='/admin/login/?next=/swagger/', permanent=False), name='account_login'),
     path('login/', auth_views.LoginView.as_view(template_name='admin/login.html'), name='login'),
     path('logout/', auth_views.LogoutView.as_view(next_page='/login/'), name='logout'),
+    
+      # ✅ Upload para input_sa sob /api/
+    path('api/s3/upload-input-sa/', UploadParaInputSAView.as_view(), name='upload-input-sa'),
+
 
     # ✅ Swagger
     path('swagger/', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),
