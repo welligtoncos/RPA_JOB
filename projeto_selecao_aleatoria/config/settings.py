@@ -124,6 +124,7 @@ INSTALLED_APPS = [
     
     # Apps do projeto
     "core.apps.CoreConfig",
+    'django_filters'
 
      
 ]

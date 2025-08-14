@@ -17,6 +17,8 @@ from core.views.views_processamento_rpa import ProcessamentoRPAViewSet
 
 from core.views.UploadParaInputSAView import UploadParaInputSAView
 
+from core.views.HistoricoRPAFiltroViewSet import HistoricoRPAFiltroViewSet
+
 from rest_framework_simplejwt.views import (
     TokenObtainPairView,
     TokenRefreshView,
@@ -44,6 +46,7 @@ router = DefaultRouter()
 router.register(r'rpa', RPAViewSet, basename='rpa')
 router.register(r'historico-rpa', HistoricoRPAViewSet, basename='histforico-rpa')
 router.register(r'docker-historico', DockerHistoricoViewSet, basename='docker-historico')
+router.register(r'historico-rpa-filtro', HistoricoRPAFiltroViewSet, basename='historico-rpa-filtro')
 router.register(r'docker-rpa', RPADockerViewSet, basename='docker-rpa')
 router.register(r'resultados', ResultadoDownloadViewSet, basename='resultados')
 router.register(r'processamentos', ProcessamentoRPAViewSet, basename='processamentos')
