@@ -46,7 +46,7 @@ class RPADockerProcessor:
             processamento.iniciar_processamento()
 
             # 1) Dados base 
-            imagem_docker = "selecao_aleatoria:v2.2"  # use a mesma tag em todo lugar
+            imagem_docker = "selecao_aleatoria:v3.1"  # use a mesma tag em todo lugar
             comando = processamento.dados_entrada.get("comando", "python -u main.py")
             container_name = f"selecao-aleatoria-{str(processamento.id).replace('-', '')[:12]}"
 
